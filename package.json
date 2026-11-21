@@ -1,0 +1,19 @@
+{
+  "name": "space-shooter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vertical-scrolling retro space shooter built with Phaser 3 and the CC0 ansimuz Legacy Collection art.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "package": "vite build && node scripts/package.mjs"
+  },
+  "dependencies": {
+    "phaser": "3.80.1"
+  },
+  "devDependencies": {
+    "vite": "^8.3.8"
+  }
+}

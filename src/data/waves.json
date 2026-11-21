@@ -1,0 +1,55 @@
+{
+  "_format": "Each wave lists spawn groups. at = ms after the wave starts. formation: line | v | column | random. count members, spaced `spacing` px (line, v) and `interval` ms apart. x = formation centre (column x, random ignores it). Any other key (vx, amp, freq, phase, stopY, bursts, speed...) overrides that enemy type's config for the group. A wave ends when everything has spawned and been destroyed or has left, then `delay` ms pass before the next. The boss arrives after the last wave.",
+  "waves": [
+    {
+      "name": "Warm-up",
+      "groups": [
+        { "at": 0, "type": "grunt", "formation": "line", "count": 5, "x": 160, "spacing": 50 },
+        { "at": 4000, "type": "grunt", "formation": "line", "count": 4, "x": 160, "spacing": 60 },
+        { "at": 8000, "type": "grunt", "formation": "column", "count": 4, "x": 80, "interval": 600 },
+        { "at": 8000, "type": "grunt", "formation": "column", "count": 4, "x": 240, "interval": 600 },
+        { "at": 13000, "type": "grunt", "formation": "random", "count": 6, "interval": 700 }
+      ]
+    },
+    {
+      "name": "Weavers",
+      "groups": [
+        { "at": 0, "type": "weaver", "formation": "column", "count": 4, "x": 100, "interval": 700 },
+        { "at": 4000, "type": "weaver", "formation": "column", "count": 4, "x": 220, "interval": 700, "phase": 0.5 },
+        { "at": 8000, "type": "grunt", "formation": "line", "count": 4, "x": 160, "spacing": 60 },
+        { "at": 11000, "type": "weaver", "formation": "column", "count": 6, "x": 160, "interval": 600, "amp": 75 },
+        { "at": 15000, "type": "grunt", "formation": "random", "count": 6, "interval": 600 }
+      ]
+    },
+    {
+      "name": "Gunship",
+      "groups": [
+        { "at": 0, "type": "gunship", "formation": "line", "count": 1, "x": 160 },
+        { "at": 2000, "type": "grunt", "formation": "random", "count": 8, "interval": 900 },
+        { "at": 9000, "type": "weaver", "formation": "column", "count": 4, "x": 75, "interval": 700 },
+        { "at": 13000, "type": "weaver", "formation": "column", "count": 4, "x": 245, "interval": 700, "phase": 0.5 }
+      ]
+    },
+    {
+      "name": "Gauntlet",
+      "groups": [
+        { "at": 0, "type": "weaver", "formation": "column", "count": 5, "x": 75, "interval": 600 },
+        { "at": 0, "type": "weaver", "formation": "column", "count": 5, "x": 245, "interval": 600, "phase": 0.5 },
+        { "at": 6000, "type": "gunship", "formation": "line", "count": 2, "x": 160, "spacing": 175 },
+        { "at": 9000, "type": "grunt", "formation": "random", "count": 12, "interval": 400 },
+        { "at": 15000, "type": "weaver", "formation": "v", "count": 5, "x": 160, "spacing": 45 }
+      ]
+    },
+    {
+      "name": "Finale",
+      "groups": [
+        { "at": 0, "type": "gunship", "formation": "line", "count": 3, "x": 160, "spacing": 100 },
+        { "at": 3000, "type": "grunt", "formation": "column", "count": 6, "x": 50, "interval": 400, "vx": 25 },
+        { "at": 3000, "type": "grunt", "formation": "column", "count": 6, "x": 270, "interval": 400, "vx": -25 },
+        { "at": 9000, "type": "weaver", "formation": "line", "count": 5, "x": 160, "spacing": 55, "amp": 38 },
+        { "at": 13000, "type": "grunt", "formation": "random", "count": 14, "interval": 350 },
+        { "at": 17000, "type": "gunship", "formation": "line", "count": 1, "x": 160, "stopY": 86, "bursts": 4 }
+      ]
+    }
+  ]
+}
