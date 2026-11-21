@@ -45,12 +45,19 @@ In dev mode the Phaser game instance is `window.__GAME__` and the sound system `
   - **Green Koala** (`grunt`): flies straight down, 2 HP, 100 points
   - **Blue Koala** (`weaver`): sine-wave path, fires one aimed shot, 3 HP, 200 points
   - **Red Koala** (`gunship`): parks near the top, fires 3-shot aimed bursts, then leaves, 6 HP, 400 points
-- **Power-ups** (gems dropped by destroyed enemies, more often by Red Koalas):
+- **Bonus slot machine** after every cleared wave (5 per run): the action pauses, 3 reels of gems spin
+  on their own and always pay out one random power-up (same odds as drops: 50% weapon, 30% shield,
+  20% life), then play resumes. After wave 5 the boss follows.
+- **Power-up drops** (gems from destroyed enemies: 3% of Green, 5% of Blue, 17.5% of Red Koalas):
   - Yellow: weapon level up — bolt → double pulse → charged shot (+ angled pulses)
   - Blue: shield, absorbs one hit
   - Red: extra life
   - A pickup that can't raise anything further gives 1000 points. Dying costs one weapon level.
-- **Koala King** (after the last wave): WARNING, then
+- **Koala King taunt** (after the WARNING, 2 s, picked at random 1 in 3):
+  - "YOUR DAYS ARE NUMBERED!" — SPEED BOOST: boss moves 10% faster (not its bullets)
+  - "DO YOU MISS ME?" — no change
+  - "POWER OF KOALA!" — HP BOOST: boss has 10% more HP (770)
+- **Koala King** (after the last wave): WARNING, taunt, then
   - Phase 1: sways, side cannons fire bullet fans, every third fan an aimed burst
   - Phase 2 (below 50%): armour, helmet and cannons blow off; fans from the core alternate with a ray beam
     (1 s charge-up with a red line showing where it will fire, then a sweeping beam)

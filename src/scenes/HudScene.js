@@ -36,6 +36,13 @@ export class HudScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setAlpha(0);
 
+    // Pre-boss taunt (big pink line + yellow boost line), placed on whole pixels.
+    const TAUNT = { ...FONT, fontSize: '16px', fontStyle: 'bold', color: '#ff8fa3', align: 'center' };
+    this.tauntText = this.add.text(0, 0, '', TAUNT).setStroke('#000000', 4).setAlpha(0);
+    this.tauntSub = this.add.text(0, 0, '', { ...FONT, fontSize: '12px', fontStyle: 'bold', color: '#ffd166' })
+      .setStroke('#000000', 3)
+      .setAlpha(0);
+
     // Boss health bar, top centre (hidden until the boss arrives).
     const bw = 180;
     this.bossBar = this.add.container(width / 2, 30).setVisible(false);
@@ -59,6 +66,7 @@ export class HudScene extends Phaser.Scene {
     const handlers = {
       'wave-start': (w) => this.showWave(w),
       'boss-warning': () => this.showWarning(),
+      'boss-taunt': (t) => this.showTaunt(t),
       'boss-phase2': () => this.flashBanner('ARMOR BROKEN!', 'WATCH THE BEAM', '#ff8fa3'),
       'boss-defeated': () => this.flashBanner(CONFIG.boss.name, 'DEFEATED!', '#ffd166'),
     };
@@ -110,6 +118,21 @@ export class HudScene extends Phaser.Scene {
       targets: this.banner, alpha: 0.15, duration: 160, yoyo: true, repeat: 7,
       onComplete: () => this.tweens.add({ targets: [this.banner, this.bannerSub], alpha: 0, duration: 300 }),
     });
+  }
+
+  showTaunt({ text, sub }) {
+    const { width, height } = CONFIG;
+    const place = (t, y) => t.setPosition(Math.round((width - t.width) / 2), Math.round(y - t.height / 2));
+    this.tweens.killTweensOf([this.banner, this.bannerSub, this.tauntText, this.tauntSub]);
+    this.banner.setAlpha(0);
+    this.bannerSub.setAlpha(0);
+    place(this.tauntText.setText(text), height / 2 - 40);
+    place(this.tauntSub.setText(sub), height / 2 - 14);
+    // Pop in, hold, fade out within CONFIG.boss.tauntMs.
+    const ms = CONFIG.boss.tauntMs;
+    [this.tauntText, this.tauntSub].forEach((t) => t.setAlpha(1).setScale(1));
+    this.tweens.add({ targets: [this.tauntText, this.tauntSub], alpha: 0, delay: ms - 350, duration: 300 });
+    if (sub) this.tweens.add({ targets: this.tauntSub, alpha: 0.35, duration: 150, yoyo: true, repeat: 3 });
   }
 
   makeButton(x, y, w, getLabel, onClick) {

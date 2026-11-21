@@ -9,7 +9,9 @@ import { sound } from '../systems/Sound.js';
 //   phase2     cycles spread (fans from the core) -> charge (ray charge-up + warning line) -> beam
 //   dying      explosion chain, then GameScene shows Victory
 export class Boss extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene) {
+  // mods (from the pre-boss taunt roll): hpMul scales health, speedMul scales movement
+  // (entry, sway, beam tracking) - not bullet speed.
+  constructor(scene, mods = {}) {
     const B = CONFIG.boss;
     super(scene, CONFIG.width / 2, -80, 'boss', 0);
     scene.add.existing(this);
@@ -17,8 +19,9 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
     this.setDepth(5);
     this.body.setSize(B.body[0], B.body[1], false).setOffset(B.body[2], B.body[3]);
 
-    this.maxHp = B.hp;
-    this.hp = B.hp;
+    this.speedMul = mods.speedMul || 1;
+    this.maxHp = Math.round(B.hp * (mods.hpMul || 1));
+    this.hp = this.maxHp;
     this.state = 'enter';
     this.vulnerable = false;
     this.t = 0; // ms in the current state
@@ -36,7 +39,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
     this.ray = scene.add.sprite(this.x, this.y, 'boss-rays').setOrigin(0.5, 0).setDepth(9).setVisible(false);
     this.warnLine = scene.add.graphics().setDepth(9);
 
-    this.setVelocity(0, B.enterSpeed);
+    this.setVelocity(0, B.enterSpeed * this.speedMul);
   }
 
   get mouthX() {
@@ -100,7 +103,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
 
   sway(delta, amp, hz) {
     this.swayT += delta;
-    this.x = CONFIG.width / 2 + amp * Math.sin((this.swayT / 1000) * hz * Math.PI * 2);
+    this.x = CONFIG.width / 2 + amp * Math.sin((this.swayT / 1000) * hz * this.speedMul * Math.PI * 2);
   }
 
   updatePhase1(delta) {
@@ -210,9 +213,9 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
     } else if (this.p2 === 'beam') {
       // Slowly follow the player: dodgeable, but you can't just sit still.
       const target = this.scene.alive ? this.scene.player.x : this.x;
-      const step = (P.beamTrackSpeed * delta) / 1000;
+      const step = (P.beamTrackSpeed * this.speedMul * delta) / 1000;
       this.x = Phaser.Math.Clamp(this.x + Phaser.Math.Clamp(target - this.x, -step, step), 60, CONFIG.width - 60);
-      this.swayT = Math.asin(Phaser.Math.Clamp((this.x - CONFIG.width / 2) / P.swayAmp, -1, 1)) / (P.swayHz * Math.PI * 2) * 1000;
+      this.swayT = Math.asin(Phaser.Math.Clamp((this.x - CONFIG.width / 2) / P.swayAmp, -1, 1)) / (P.swayHz * this.speedMul * Math.PI * 2) * 1000;
       if (this.t >= P.beamMs) this.endBeam();
     }
   }

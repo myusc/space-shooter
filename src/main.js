@@ -8,6 +8,7 @@ import { HudScene } from './scenes/HudScene.js';
 import { PauseScene } from './scenes/PauseScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
 import { VictoryScene } from './scenes/VictoryScene.js';
+import { SlotScene } from './scenes/SlotScene.js';
 import { GalleryScene } from './scenes/GalleryScene.js';
 
 const game = new Phaser.Game({
@@ -28,8 +29,8 @@ const game = new Phaser.Game({
     windowEvents: false,
   },
   scale: { mode: Phaser.Scale.NONE, zoom: computeZoom() },
-  // Order here is draw order: overlays (Hud, Pause, GameOver, Victory) come after Game.
-  scene: [BootScene, TitleScene, GameScene, HudScene, PauseScene, GameOverScene, VictoryScene, GalleryScene],
+  // Order here is draw order: overlays (Hud, Slot, Pause, GameOver, Victory) come after Game.
+  scene: [BootScene, TitleScene, GameScene, HudScene, SlotScene, PauseScene, GameOverScene, VictoryScene, GalleryScene],
 });
 
 window.addEventListener('resize', () => game.scale.setZoom(computeZoom()));

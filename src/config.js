@@ -50,7 +50,7 @@ export const CONFIG = {
 
   // Pickups dropped by destroyed enemies (gems from the Legacy Collection).
   powerups: {
-    dropChance: { grunt: 0.06, weaver: 0.1, gunship: 0.35 },
+    dropChance: { grunt: 0.03, weaver: 0.05, gunship: 0.175 }, // halved once the wave-clear slot machine was added
     kinds: {
       weapon: { gem: 'yellow', weight: 5, label: 'POWER UP' },
       shield: { gem: 'blue', weight: 3, label: 'SHIELD' },
@@ -61,6 +61,10 @@ export const CONFIG = {
     maxedBonus: 1000, // points for a pickup that can't raise anything further
   },
   shieldInvulnerableMs: 1000, // grace after the shield absorbs a hit
+
+  // Bonus slot machine after every cleared wave: spins on its own and always pays one random power-up
+  // (same odds as the power-up weights above). Times in ms.
+  slot: { delay: 600, spinMs: 1100, reelGap: 400, tickMs: 70, showPrizeMs: 1000 },
 
   // The stage boss, after the last wave of waves.json.
   boss: {
@@ -83,6 +87,15 @@ export const CONFIG = {
       chargeMs: 1100, beamMs: 1700, beamTrackSpeed: 45, beamHalfWidth: 7,
     },
     hitStopMs: 35, hitStopEvery: 300, // short freeze on hits, at most this often
+
+    // After the WARNING, one of these is picked at random (1 in 3) and shown for tauntMs before the
+    // boss flies in. speedMul scales boss movement (not bullets), hpMul scales its health.
+    tauntMs: 2000,
+    taunts: [
+      { text: 'YOUR DAYS ARE NUMBERED!', sub: 'SPEED BOOST!', speedMul: 1.1 },
+      { text: 'DO YOU MISS ME?', sub: '' },
+      { text: 'POWER OF KOALA!', sub: 'HP BOOST!', hpMul: 1.1 },
+    ],
   },
 
   // Enemy types used by src/data/waves.json. Speeds are px/s, times are ms.

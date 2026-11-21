@@ -10,17 +10,25 @@ export class VictoryScene extends Phaser.Scene {
   create({ score, baseScore, lives, bonus, highScore, isNewBest, timeMs }) {
     const { width, height } = CONFIG;
     const cx = width / 2;
-    const top = Math.round(height / 2) - 110;
+    const top = Math.round(height / 2) - 130;
     this.add.rectangle(0, 0, width, height, 0x000000, 0.6).setOrigin(0);
 
+    // 12 px bold text, placed on whole pixels (bold + whole pixels keep thin strokes crisp at 320x480).
+    const BIG = { ...FONT, fontSize: '12px', fontStyle: 'bold' };
+    const put = (x, y, str, style, ox = 0.5, oy = 0.5) => {
+      const t = this.add.text(0, 0, str, style);
+      t.setPosition(Math.round(x - t.width * ox), Math.round(y - t.height * oy));
+      return t;
+    };
+
     this.add.text(cx, top, 'STAGE CLEAR!', { ...FONT, fontSize: '24px' }).setOrigin(0.5).setStroke('#0b1630', 5);
-    this.add.text(cx, top + 26, `THE ${CONFIG.boss.name} IS DEFEATED`, { ...FONT, color: '#ffd166' }).setOrigin(0.5);
+    put(cx, top + 28, `THE ${CONFIG.boss.name} IS DEFEATED`, { ...BIG, color: '#ffd166' });
 
     // Little parade: the player ship with its flames.
-    const ship = this.add.sprite(cx, top + 66, 'player-ship', 0);
-    this.add.sprite(cx - 4, top + 86, 'player-thrust').setOrigin(0.5, 0).play('player-thrust');
-    this.add.sprite(cx + 4, top + 86, 'player-thrust').setOrigin(0.5, 0).play({ key: 'player-thrust', startFrame: 2 });
-    this.tweens.add({ targets: ship, y: top + 62, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    const ship = this.add.sprite(cx, top + 70, 'player-ship', 0);
+    this.add.sprite(cx - 4, top + 90, 'player-thrust').setOrigin(0.5, 0).play('player-thrust');
+    this.add.sprite(cx + 4, top + 90, 'player-thrust').setOrigin(0.5, 0).play({ key: 'player-thrust', startFrame: 2 });
+    this.tweens.add({ targets: ship, y: top + 66, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     const secs = Math.round(timeMs / 1000);
     const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
@@ -32,20 +40,18 @@ export class VictoryScene extends Phaser.Scene {
       ['TIME', time],
     ];
     rows.forEach(([label, value], i) => {
-      const y = top + 120 + i * 13;
+      const y = top + 128 + i * 19;
       const color = label === 'TOTAL' ? '#ffffff' : label === 'HI-SCORE' ? '#ffd166' : '#8fb8d0';
-      this.add.text(cx - 100, y, label, { ...FONT, color });
-      this.add.text(cx + 100, y, String(value), { ...FONT, color }).setOrigin(1, 0);
+      put(cx - 128, y, label, { ...BIG, color }, 0);
+      put(cx + 128, y, String(value), { ...BIG, color }, 1);
     });
 
     if (isNewBest) {
-      const best = this.add.text(cx, top + 196, 'NEW HIGH SCORE!', { ...FONT, color: '#ffd166' }).setOrigin(0.5);
+      const best = put(cx, top + 232, 'NEW HIGH SCORE!', { ...BIG, color: '#ffd166' });
       this.tweens.add({ targets: best, alpha: 0.2, duration: 300, yoyo: true, repeat: -1 });
     }
 
-    const prompt = this.add.text(cx, top + 228, 'SPACE OR TAP TO PLAY AGAIN\nESC FOR TITLE', { ...FONT, align: 'center' })
-      .setOrigin(0.5)
-      .setAlpha(0);
+    const prompt = put(cx, top + 274, 'SPACE OR TAP TO PLAY AGAIN\nESC FOR TITLE', { ...BIG, align: 'center' }).setAlpha(0);
 
     // Short lock-out so fire held at the moment of victory doesn't skip this screen.
     this.time.delayedCall(1200, () => {

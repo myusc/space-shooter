@@ -27,10 +27,16 @@ export class TitleScene extends Phaser.Scene {
 
     // Score table
     const rows = ['grunt', 'weaver', 'gunship'].map((type) => CONFIG.enemies[type]);
+    // 12 px bold (the rest of the small print is 8 px); sprite + text block is ~188 px wide, centred.
+    // Bold keeps thin strokes (the middle bar of E) at least one full pixel at this low resolution,
+    // and each row is placed on a whole pixel so it isn't blurred across two.
     rows.forEach(({ key, anim, name, points }, i) => {
       const y = 226 + i * 46;
-      this.add.sprite(cx - 76, y, key).play(anim).setDepth(10);
-      this.add.text(cx - 44, y, `${name.padEnd(11)} ${String(points).padStart(4)} PTS`, FONT).setOrigin(0, 0.5).setDepth(10);
+      this.add.sprite(cx - 70, y, key).play(anim).setDepth(10);
+      const label = this.add.text(cx - 38, 0, `${name.padEnd(11)} ${String(points).padStart(4)} PTS`, {
+        ...FONT, fontSize: '12px', fontStyle: 'bold',
+      }).setDepth(10);
+      label.y = Math.round(y - label.height / 2);
     });
 
     // Power-up legend: the gem colours and what they do.

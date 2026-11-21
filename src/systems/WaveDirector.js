@@ -33,6 +33,7 @@ export class WaveDirector {
     }
 
     if (!this.queue.length && this.scene.enemies.countActive(true) === 0) {
+      this.scene.onWaveCleared(this.number);
       if (this.index >= this.waves.length - 1) {
         this.state = 'done';
         this.scene.onWavesComplete();

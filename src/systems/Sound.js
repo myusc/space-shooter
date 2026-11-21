@@ -279,6 +279,24 @@ const SFX = {
   gameOver() {
     this.notes([72, 71, 69, 67, 64, 60], { type: 'triangle', step: 0.18, vol: 0.25 });
   },
+  taunt() {
+    // a low, sneering "ha-ha-haa"
+    const t0 = this.ctx.currentTime;
+    [0, 0.18, 0.36].forEach((dt, i) => {
+      this.tone({ type: 'sawtooth', freq: 180 - i * 20, to: 120 - i * 15, dur: i === 2 ? 0.4 : 0.15, vol: 0.12, when: t0 + dt });
+    });
+  },
+  reelTick() {
+    if (!this.throttle('reelTick', 55)) return;
+    this.tone({ type: 'square', freq: 1800, dur: 0.02, vol: 0.04 });
+  },
+  reelStop() {
+    this.tone({ type: 'square', freq: 520, to: 260, dur: 0.08, vol: 0.12 });
+    this.noise({ dur: 0.05, vol: 0.08, freq: 3000 });
+  },
+  jackpot() {
+    this.notes([72, 76, 79, 84, 79, 84, 88], { step: 0.06, vol: 0.12 });
+  },
   pause() {
     this.notes([84, 79], { step: 0.06, vol: 0.08 });
   },

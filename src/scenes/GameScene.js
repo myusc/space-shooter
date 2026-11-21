@@ -381,13 +381,17 @@ export class GameScene extends Phaser.Scene {
     if (Math.random() < chance) this.spawnPowerup(enemy.x, enemy.y);
   }
 
+  // A random power-up kind, using the weights in CONFIG.powerups.kinds.
+  randomPowerupKind() {
+    const kinds = CONFIG.powerups.kinds;
+    const total = Object.values(kinds).reduce((s, k) => s + k.weight, 0);
+    let r = Math.random() * total;
+    return Object.keys(kinds).find((k) => (r -= kinds[k].weight) < 0) || 'weapon';
+  }
+
   spawnPowerup(x, y, kind) {
     const kinds = CONFIG.powerups.kinds;
-    if (!kind) {
-      const total = Object.values(kinds).reduce((s, k) => s + k.weight, 0);
-      let r = Math.random() * total;
-      kind = Object.keys(kinds).find((k) => (r -= kinds[k].weight) < 0) || 'weapon';
-    }
+    kind = kind || this.randomPowerupKind();
     const p = this.powerups.get(x, y);
     if (!p) return;
     p.enableBody(true, x, y, true, true);
@@ -400,23 +404,28 @@ export class GameScene extends Phaser.Scene {
   onCollect(player, p) {
     if (!p.active || !this.alive) return;
     p.disableBody(true, true);
+    this.grantPowerup(p.kind, false, p.x, p.y - 10);
+  }
+
+  // Applies a power-up (from a gem pickup, or the wave-clear slot machine) and floats its name.
+  grantPowerup(kind, fromSlot, x = this.player.x, y = this.player.y - 30) {
     const P = CONFIG.powerups;
-    let text = P.kinds[p.kind].label;
+    let text = P.kinds[kind].label;
     let maxed = false;
-    if (p.kind === 'weapon') {
+    if (kind === 'weapon') {
       if (this.weaponLevel < CONFIG.weapons.length - 1) {
         this.weaponLevel += 1;
         text = CONFIG.weapons[this.weaponLevel].name;
         this.registry.set('weapon', this.weaponLevel);
         sound.sfx('powerup');
       } else maxed = true;
-    } else if (p.kind === 'shield') {
+    } else if (kind === 'shield') {
       if (!this.shield) {
         this.shield = true;
         this.registry.set('shield', true);
         sound.sfx('shield');
       } else maxed = true;
-    } else if (p.kind === 'life') {
+    } else if (kind === 'life') {
       if (this.lives < P.maxLives) {
         this.lives += 1;
         this.registry.set('lives', this.lives);
@@ -428,7 +437,35 @@ export class GameScene extends Phaser.Scene {
       text = '+' + P.maxedBonus;
       sound.sfx('powerup');
     }
-    this.floatText(p.x, p.y - 10, text, '#ffd166');
+    // While the ship is exploding/respawning, show the text mid-screen instead of on the empty spot.
+    if (fromSlot && !this.alive) {
+      x = CONFIG.width / 2;
+      y = CONFIG.player.startY - 30;
+    }
+    this.floatText(x, y, text, '#ffd166');
+  }
+
+  // ---------- bonus slot machine ----------
+
+  // Called by the WaveDirector when a wave has been cleared (including the last one, before the boss).
+  onWaveCleared(number) {
+    if (number < 1) return; // dev "skip to boss" before any wave started
+    this.time.delayedCall(CONFIG.slot.delay, () => {
+      if (this.over || this.lives <= 0 || this.dying) {
+        // Out of lives (Game Over pending) or mid death-freeze: try once more after the freeze,
+        // otherwise skip the spin.
+        if (this.dying && this.lives > 0) this.time.delayedCall(CONFIG.deathFreezeMs, () => this.openSlot(number));
+        return;
+      }
+      this.openSlot(number);
+    });
+  }
+
+  openSlot(number) {
+    if (this.over || this.lives <= 0 || !this.scene.isActive()) return;
+    this.endDrag();
+    this.scene.pause();
+    this.scene.launch('Slot', { wave: number, kind: this.randomPowerupKind() });
   }
 
   floatText(x, y, text, color) {
@@ -555,13 +592,24 @@ export class GameScene extends Phaser.Scene {
       this.events.emit('boss-warning');
       sound.stopMusic();
       sound.sfx('warning');
-      this.time.delayedCall(CONFIG.boss.warningMs, () => this.spawnBoss());
+      this.time.delayedCall(CONFIG.boss.warningMs, () => this.bossTaunt());
     });
+  }
+
+  // 1-in-3 taunt before the boss flies in; some come with a boost for the boss.
+  bossTaunt() {
+    if (this.over || this.boss) return;
+    const taunt = Phaser.Utils.Array.GetRandom(CONFIG.boss.taunts);
+    this.bossMods = { speedMul: taunt.speedMul || 1, hpMul: taunt.hpMul || 1 };
+    this.lastTaunt = taunt;
+    this.events.emit('boss-taunt', taunt);
+    sound.sfx('taunt');
+    this.time.delayedCall(CONFIG.boss.tauntMs, () => this.spawnBoss());
   }
 
   spawnBoss() {
     if (this.over || this.boss) return;
-    this.boss = new Boss(this);
+    this.boss = new Boss(this, this.bossMods);
     // sprite-vs-group overlap: the callback gets (boss, bullet) in that order
     this.physics.add.overlap(this.boss, this.bullets, this.onBulletHitsBoss, null, this);
     this.physics.add.overlap(this.boss, this.player, this.onPlayerHitsBoss, null, this);

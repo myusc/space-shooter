@@ -10,23 +10,37 @@ export class GameOverScene extends Phaser.Scene {
   create({ score, highScore, isNewBest, wave, killedBy }) {
     const { width, height } = CONFIG;
     const cx = width / 2;
-    const top = Math.round(height / 2) - 80; // block is ~180 px tall, centred
+    const top = Math.round(height / 2) - 100; // block is ~200 px tall, centred
     this.add.rectangle(0, 0, width, height, 0x000000, 0.65).setOrigin(0);
 
+    // Same style as the Stage Clear page: 12 px bold, placed on whole pixels so thin strokes stay crisp.
+    const BIG = { ...FONT, fontSize: '12px', fontStyle: 'bold' };
+    const put = (x, y, str, style, ox = 0.5, oy = 0.5) => {
+      const t = this.add.text(0, 0, str, style);
+      t.setPosition(Math.round(x - t.width * ox), Math.round(y - t.height * oy));
+      return t;
+    };
+
     this.add.text(cx, top, 'GAME OVER', { ...FONT, fontSize: '24px' }).setOrigin(0.5).setStroke('#3a0b16', 5);
-    if (killedBy) this.add.text(cx, top + 24, killedBy, { ...FONT, color: '#ff4d6d' }).setOrigin(0.5);
-    this.add.text(cx, top + 46, 'SCORE ' + score, FONT).setOrigin(0.5);
-    this.add.text(cx, top + 58, 'HI-SCORE ' + highScore, { ...FONT, color: '#ffd166' }).setOrigin(0.5);
-    this.add.text(cx, top + 70, 'REACHED WAVE ' + wave, { ...FONT, color: '#8fb8d0' }).setOrigin(0.5);
+    if (killedBy) put(cx, top + 28, killedBy, { ...BIG, color: '#ff4d6d' });
+
+    const rows = [
+      ['SCORE', score, '#ffffff'],
+      ['HI-SCORE', highScore, '#ffd166'],
+      ['REACHED WAVE', wave, '#8fb8d0'],
+    ];
+    rows.forEach(([label, value, color], i) => {
+      const y = top + 62 + i * 19;
+      put(cx - 128, y, label, { ...BIG, color }, 0);
+      put(cx + 128, y, String(value), { ...BIG, color }, 1);
+    });
 
     if (isNewBest) {
-      const best = this.add.text(cx, top + 92, 'NEW HIGH SCORE!', { ...FONT, color: '#ffd166' }).setOrigin(0.5);
+      const best = put(cx, top + 136, 'NEW HIGH SCORE!', { ...BIG, color: '#ffd166' });
       this.tweens.add({ targets: best, alpha: 0.2, duration: 300, yoyo: true, repeat: -1 });
     }
 
-    const prompt = this.add.text(cx, top + 132, 'SPACE OR TAP TO RETRY\nESC FOR TITLE', { ...FONT, align: 'center' })
-      .setOrigin(0.5)
-      .setAlpha(0);
+    const prompt = put(cx, top + 178, 'SPACE OR TAP TO RETRY\nESC FOR TITLE', { ...BIG, align: 'center' }).setAlpha(0);
 
     // Short lock-out so fire held at the moment of death doesn't skip this screen.
     this.time.delayedCall(800, () => {
