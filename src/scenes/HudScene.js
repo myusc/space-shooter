@@ -26,6 +26,9 @@ export class HudScene extends Phaser.Scene {
     this.add.text(width - 52, height - 12, 'PWR', { ...FONT, color: '#8fb8d0' });
     this.weaponPips = CONFIG.weapons.map((w, i) => this.add.rectangle(width - 32 + i * 9, height - 8, 6, 6, 0xffd166));
     this.shieldIcon = this.add.sprite(width - 64, height - 8, 'gems').play('gem-blue').setScale(0.75).setVisible(false);
+    // One-wave power-ups in effect, above the PWR pips.
+    this.rapidText = this.add.text(width - 4, height - 34, 'RAPID FIRE', { ...FONT, color: '#9be7a8' }).setOrigin(1, 0.5).setVisible(false);
+    this.wingText = this.add.text(width - 4, height - 24, 'WINGMEN', { ...FONT, color: '#ff8fd8' }).setOrigin(1, 0.5).setVisible(false);
 
     // Banners (wave start, boss warning)
     this.banner = this.add.text(width / 2, height / 2 - 40, '', { ...FONT, fontSize: '16px', align: 'center' })
@@ -59,6 +62,21 @@ export class HudScene extends Phaser.Scene {
     this.muteButton = this.makeButton(width - 71, 9, 26, () => (sound.muted ? 'OFF' : 'SND'), () => {
       this.scene.get('Game').toggleMute();
     });
+    // Bomb button (touch/mouse; X on the keyboard). Shows how many are stored, dim when none.
+    // Tap = bomb when released; hold for god mode (see GameScene.startBombHold).
+    this.bombButton = this.makeButton(width - 106, 9, 38, () => `BOMB ${reg.get('bombs') || 0}`, () => {
+      this.scene.get('Game').startBombHold('pointer');
+    });
+    this.bombButton.on('pointerup', () => this.scene.get('Game').endBombHold('pointer'));
+    this.bombButton.on('pointerout', () => {
+      const g = this.scene.get('Game');
+      if (g.bombHold && g.bombHold.source === 'pointer') g.cancelBombHold();
+    });
+    // Let go anywhere else on the screen: treat as letting go of the button.
+    const releaseBomb = () => this.scene.get('Game').endBombHold('pointer');
+    this.input.on('pointerup', releaseBomb);
+    // God mode countdown while the button / X is held.
+    this.godText = this.add.text(width - 106, 38, '', { ...FONT, color: '#ff8fd8' }).setOrigin(0.5, 0).setStroke('#000000', 3).setVisible(false);
 
     const refresh = () => this.refresh();
     reg.events.on('changedata', refresh);
@@ -69,6 +87,7 @@ export class HudScene extends Phaser.Scene {
       'boss-taunt': (t) => this.showTaunt(t),
       'boss-phase2': () => this.flashBanner('ARMOR BROKEN!', 'WATCH THE BEAM', '#ff8fa3'),
       'boss-defeated': () => this.flashBanner(CONFIG.boss.name, 'DEFEATED!', '#ffd166'),
+      'god-mode': () => this.flashBanner('GOD MODE!', 'ALL 6 POWER-UPS', '#ff8fd8'),
     };
     Object.entries(handlers).forEach(([e, fn]) => game.events.on(e, fn));
     // The registry and the Game scene outlive this scene, so unhook on shutdown.
@@ -91,6 +110,14 @@ export class HudScene extends Phaser.Scene {
     this.weaponPips.forEach((pip, i) => pip.setFillStyle(i <= weapon ? 0xffd166 : 0x2a3550));
     this.shieldIcon.setVisible(!!reg.get('shield'));
     this.muteButton.label.setText(this.muteButton.getLabel());
+    const bombs = reg.get('bombs') || 0;
+    this.bombButton.label.setText(this.bombButton.getLabel()).setColor(bombs ? '#ffb347' : '#e6f7ff');
+    this.bombButton.setAlpha(bombs ? 1 : 0.4);
+    this.bombButton.label.setAlpha(bombs ? 1 : 0.4);
+    const godLeft = reg.get('godHold') || 0;
+    this.godText.setText(`GOD MODE ${godLeft}`).setVisible(godLeft > 0);
+    this.rapidText.setVisible(!!reg.get('rapid'));
+    this.wingText.setVisible(!!reg.get('wingmen'));
 
     const hp = reg.get('bossHp');
     this.bossBar.setVisible(hp !== null && hp !== undefined && hp > 0);

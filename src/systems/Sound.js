@@ -29,23 +29,39 @@ const TRACKS = {
     bass: [45, 57, 45, 57, 41, 53, 41, 53, 48, 60, 48, 60, 43, 55, 43, 55],
     drums: 'k.h.s.h.k.h.s.hh', // per 8th: k kick, s snare, h hat, . rest (16 steps = 2 bars, repeated)
   },
+  // "Koala King Battle": darker and heavier than the stage theme. Dm - Bb - C - A (i - VI - VII - V),
+  // sawtooth lead riff, then a higher second pass; octave bass pumping on every 8th; a quiet arpeggio.
   boss: {
-    bpm: 172,
-    // Em - C - D - B
+    bpm: 160,
+    leadType: 'sawtooth',
+    leadVol: 0.07,
     lead: [
-      76, 79, 83, 79, 76, 79, 83, 86,
-      72, 76, 79, 76, 72, 76, 79, 84,
-      74, 78, 81, 78, 74, 78, 81, 86,
-      71, 75, 78, 75, 71, 75, 78, 83,
+      74, null, 74, 77, 81, null, 79, 77,
+      74, null, 74, 77, 82, null, 81, 77,
+      76, null, 76, 79, 84, null, 82, 81,
+      79, 77, 76, 73, 76, null, 69, null,
     ],
     lead2: [
-      88, 86, 83, 86, 88, null, 91, 88,
-      84, 83, 79, 83, 84, null, 88, 84,
-      86, 84, 81, 84, 86, null, 90, 86,
-      83, 81, 78, 81, 83, 87, 90, 95,
+      86, 84, 81, 84, 86, null, 89, 86,
+      82, 81, 77, 81, 82, null, 86, 82,
+      84, 82, 79, 82, 84, null, 88, 84,
+      85, 88, 85, 81, 79, 76, 73, 69,
     ],
-    bass: [40, 40, 52, 40, 36, 36, 48, 36, 38, 38, 50, 38, 35, 35, 47, 35],
-    drums: 'khshkhshkhshkhss',
+    bassEvery: 1, // a bass note on every 8th (the stage theme plays one every quarter)
+    bass: [
+      38, 50, 38, 50, 38, 50, 38, 50,
+      34, 46, 34, 46, 34, 46, 34, 46,
+      36, 48, 36, 48, 36, 48, 36, 48,
+      33, 45, 33, 45, 33, 45, 40, 45,
+    ],
+    // Chord tones under the lead, quiet.
+    arp: [
+      62, 65, 69, 74, 69, 65, 62, 65,
+      58, 62, 65, 70, 65, 62, 58, 62,
+      60, 64, 67, 72, 67, 64, 60, 64,
+      57, 61, 64, 69, 64, 61, 57, 61,
+    ],
+    drums: 'kkhsk.hskkhsk.ss',
   },
 };
 
@@ -197,10 +213,15 @@ class SoundSystem {
     const bus = this.musicBus;
     const leadLine = Math.floor(step / tr.lead.length) % 2 === 0 ? tr.lead : tr.lead2;
     const n = leadLine[step % leadLine.length];
-    if (n !== null) this.tone({ type: 'square', freq: midi(n), dur: len * 0.9, vol: 0.09, when: t, bus });
-    if (step % 2 === 0) {
-      const b = tr.bass[(step / 2) % tr.bass.length];
-      this.tone({ type: 'triangle', freq: midi(b), dur: len * 1.8, vol: 0.32, when: t, bus });
+    if (n !== null) this.tone({ type: tr.leadType || 'square', freq: midi(n), dur: len * 0.9, vol: tr.leadVol || 0.09, when: t, bus });
+    const every = tr.bassEvery || 2;
+    if (step % every === 0) {
+      const b = tr.bass[(step / every) % tr.bass.length];
+      this.tone({ type: 'triangle', freq: midi(b), dur: len * every * 0.9, vol: 0.32, when: t, bus });
+    }
+    if (tr.arp) {
+      const a = tr.arp[step % tr.arp.length];
+      if (a !== null) this.tone({ type: 'square', freq: midi(a), dur: len * 0.5, vol: 0.03, when: t, bus });
     }
     const d = tr.drums[step % tr.drums.length];
     if (d === 'k') this.tone({ type: 'sine', freq: 150, to: 40, dur: 0.14, vol: 0.5, when: t, bus });

@@ -19,6 +19,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
     this.setDepth(5);
     this.body.setSize(B.body[0], B.body[1], false).setOffset(B.body[2], B.body[3]);
 
+    this.mods = mods;
     this.speedMul = mods.speedMul || 1;
     this.maxHp = Math.round(B.hp * (mods.hpMul || 1));
     this.hp = this.maxHp;
@@ -98,6 +99,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite {
       this.vulnerable = true;
       this.enterState('phase1');
       this.scene.events.emit('boss-ready');
+      if (this.mods && this.mods.summon) this.scene.bossSummon(this, this.mods.summon);
     }
   }
 

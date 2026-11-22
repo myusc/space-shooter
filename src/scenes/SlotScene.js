@@ -91,7 +91,7 @@ export class SlotScene extends Phaser.Scene {
       const game = this.scene.get('Game');
       this.scene.stop();
       this.scene.resume('Game');
-      game.grantPowerup(this.kind, true);
+      game.grantPowerup(this.kind);
     });
   }
 }

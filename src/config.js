@@ -11,7 +11,7 @@ export const CONFIG = {
 
   player: {
     speed: 140, // px/s (keyboard)
-    fireRate: 7, // shots per second
+    fireRate: 5.25, // shots per second (each weapon below sets its own)
     startY: HEIGHT - 44,
     bankDelay: 0.15, // seconds of turning before the full bank frame
     // keep the ship's visible art inside the screen
@@ -24,22 +24,24 @@ export const CONFIG = {
   invulnerableMs: 2000, // blinking after a respawn
   gameOverDelay: 1800, // ms between the last explosion and the Game Over screen
 
-  bolt: { speed: 320, poolSize: 48 },
+  // scale = how big the player's shots are drawn (hitboxes shrink with them).
+  bolt: { speed: 320, poolSize: 48, scale: 0.5 },
 
   // Player weapon levels (power-ups raise it, dying lowers it by one).
   // Each shot: sprite sheet + animation, x offset from the ship, angle in degrees (0 = straight up),
   // damage. Sprite orientation (origin/rotation/hitbox) per sheet is in SHOT_SPRITES below.
   weapons: [
-    { name: 'BOLT', fireRate: 7, shots: [{ sprite: 'shot-bolt', dx: 0, angle: 0, damage: 1 }] },
+    // fireRate = shots per second (cut by 25% from 7 / 7 / 6)
+    { name: 'BOLT', fireRate: 5.25, shots: [{ sprite: 'shot-bolt', dx: 0, angle: 0, damage: 1 }] },
     {
-      name: 'DOUBLE PULSE', fireRate: 7,
+      name: 'DOUBLE PULSE', fireRate: 5.25,
       shots: [
         { sprite: 'shot-pulse', dx: -7, angle: 0, damage: 1 },
         { sprite: 'shot-pulse', dx: 7, angle: 0, damage: 1 },
       ],
     },
     {
-      name: 'CHARGED SHOT', fireRate: 6,
+      name: 'CHARGED SHOT', fireRate: 4.5,
       shots: [
         { sprite: 'shot-charged', dx: 0, angle: 0, damage: 3 },
         { sprite: 'shot-pulse', dx: -12, angle: -8, damage: 1 },
@@ -48,17 +50,30 @@ export const CONFIG = {
     },
   ],
 
-  // Pickups dropped by destroyed enemies (gems from the Legacy Collection).
+  // Power-ups, only won from the wave-clear slot machine (enemies don't drop any).
+  // `gem` is the gem colour shown on the slot reels, `weight` the odds of each prize.
   powerups: {
-    dropChance: { grunt: 0.03, weaver: 0.05, gunship: 0.175 }, // halved once the wave-clear slot machine was added
     kinds: {
-      weapon: { gem: 'yellow', weight: 5, label: 'POWER UP' },
+      weapon: { gem: 'yellow', weight: 4, label: 'POWER UP' },
       shield: { gem: 'blue', weight: 3, label: 'SHIELD' },
-      life: { gem: 'red', weight: 2, label: '1UP' },
+      life: { gem: 'red', weight: 1.5, label: '1UP' },
+      rapid: { gem: 'green', weight: 2, label: 'RAPID FIRE' },
+      wingmen: { gem: 'pink', weight: 2, label: 'WINGMEN' },
+      bomb: { gem: 'orange', weight: 1.5, label: 'BOMB' },
     },
-    fallSpeed: 45,
+    // Rapid fire and wingmen last until the next bonus spin (through the boss fight after wave 5).
+    rapidFireMul: 1.8, // fire rate multiplier
+    wingmen: { dx: 22, dy: 8, scale: 0.5 }, // two mini ships at the player's sides, each fires a bolt per shot
+    // Bombs are stored (X key / BOMB button): clear enemy bullets, damage everything on screen.
+    maxBombs: 3,
+    startBombs: 1, // free bomb at the start of every game
+    // God mode (secret): hold X or the BOMB button this long to get all 6 power-ups at once,
+    // once per game. A shorter press fires a bomb when you let go.
+    godHoldMs: 5000,
+    bombDamage: 8, // to each enemy and rock on screen
+    bombBossDamage: 40,
     maxLives: 5,
-    maxedBonus: 1000, // points for a pickup that can't raise anything further
+    maxedBonus: 1000, // points for a prize that can't raise anything further
   },
   shieldInvulnerableMs: 1000, // grace after the shield absorbs a hit
 
@@ -92,9 +107,21 @@ export const CONFIG = {
     // boss flies in. speedMul scales boss movement (not bullets), hpMul scales its health.
     tauntMs: 2000,
     taunts: [
-      { text: 'YOUR DAYS ARE NUMBERED!', sub: 'SPEED BOOST!', speedMul: 1.1 },
-      { text: 'DO YOU MISS ME?', sub: '' },
-      { text: 'POWER OF KOALA!', sub: 'HP BOOST!', hpMul: 1.1 },
+      // Speed boost: 25% faster, and it opens the fight by launching a squad of diving Green Koalas.
+      {
+        text: 'YOUR DAYS ARE NUMBERED!', sub: 'SPEED BOOST!', speedMul: 1.25,
+        summon: { type: 'grunt', offsets: [-60, -20, 20, 60], gap: 350 },
+      },
+      // No boost, but it opens the fight with shielded Red Koalas parked just below it.
+      {
+        text: 'DO YOU MISS ME?', sub: '',
+        summon: { type: 'gunship', offsets: [-70, 70], gap: 500, overrides: { stopY: 168 } },
+      },
+      // HP boost: 10% more health, and it opens the fight with a squad of cloaking Blue Koalas.
+      {
+        text: 'POWER OF KOALA!', sub: 'HP BOOST!', hpMul: 1.1,
+        summon: { type: 'weaver', offsets: [-50, 0, 50], gap: 450 },
+      },
     ],
   },
 
@@ -104,11 +131,17 @@ export const CONFIG = {
     grunt: {
       name: 'GREEN KOALA', key: 'enemy-01', anim: 'enemy-01-fly', hp: 2, points: 100,
       speed: 68, body: [27, 27, 10, 7],
+      // Dive: somewhere in this height band it stops, flashes red for diveWindup ms (the warning),
+      // then charges in a straight line at where the player is at that moment.
+      diveYMin: 70, diveYMax: 190, diveWindup: 400, diveSpeed: 165,
     },
     weaver: {
       name: 'BLUE KOALA', key: 'enemy-02', anim: 'enemy-02-fly', hp: 3, points: 200,
       speed: 56, amp: 50, freq: 0.5, // sine sway: amplitude px, cycles per second
       fireYMin: 60, fireYMax: 220, // fires one aimed shot somewhere in this band
+      // Cloak: while more than cloakDistance px from the player it blinks for cloakBlinkMs, then turns
+      // invisible for cloakMs (shots pass through it and it can't ram you), then waits cloakCooldown ms.
+      cloakDistance: 170, cloakBlinkMs: 600, cloakMs: 2000, cloakCooldown: 1500,
       body: [26, 22, 11, 11],
     },
     gunship: {
@@ -116,12 +149,17 @@ export const CONFIG = {
       speed: 62, stopY: 64, // flies in, parks at stopY
       bursts: 3, burstInterval: 1400, burstShots: 3, shotGap: 140,
       leaveSpeed: 100, // then flies off the bottom
+      // Visible bubble shield: absorbs this many hits before the Koala itself can be damaged.
+      // Bombs go straight through it.
+      shieldHp: 4, shieldRadius: 22, shieldColor: 0x7fdcff,
       body: [34, 26, 7, 11],
     },
   },
   enemyPool: 30,
 
-  enemyBullet: { speed: 125, poolSize: 140 },
+  // Bullet size per shooter (hitboxes grow with them): Green/Blue Koalas use scale, Red Koalas
+  // gunshipScale, the boss bossScale.
+  enemyBullet: { speed: 125, poolSize: 140, scale: 1.5, gunshipScale: 3, bossScale: 1 },
 
   waves: {
     firstDelay: 1500, // ms before wave 1
@@ -136,6 +174,9 @@ export const CONFIG = {
   fx: { hitPool: 24, explosionPool: 12, flashMs: 60 },
 
   highScoreKey: 'space-shooter.highScore',
+  leaderboardKey: 'space-shooter.top3', // [{ name, score }], best first
+  leaderboardSize: 3,
+  nameMaxLength: 10,
 
   props: {
     far: { keys: ['prop-planet', 'prop-eclipse-1', 'prop-eclipse-2'], count: 1, speed: 10 },
@@ -144,6 +185,12 @@ export const CONFIG = {
       count: 4,
       minSpeed: 36,
       maxSpeed: 56,
+      // In the Game scene the rocks are hazards: touching one costs a life (or the shield).
+      // Hit circle radius = hitScale x the rock's smaller side, so the jagged edges are forgiving.
+      hitScale: 0.36,
+      // Rocks can be shot: HP = rock's smaller side / hpPer (rounded up; 3-7 hits), points when broken.
+      hpPer: 10,
+      points: 50,
     },
   },
 };

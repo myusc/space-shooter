@@ -4,7 +4,7 @@ import { Enemy } from '../objects/Enemy.js';
 import { Boss } from '../objects/Boss.js';
 import { Starfield } from '../systems/Starfield.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
-import { loadHighScore, saveHighScore } from '../systems/highScore.js';
+import { loadHighScore, saveHighScore, leaderboardRank } from '../systems/highScore.js';
 import { sound } from '../systems/Sound.js';
 import waveScript from '../data/waves.json';
 
@@ -20,6 +20,11 @@ export class GameScene extends Phaser.Scene {
     this.lives = CONFIG.lives;
     this.weaponLevel = 0;
     this.shield = false;
+    this.rapid = false;
+    this.wingmenOn = false;
+    this.bombs = CONFIG.powerups.startBombs;
+    this.bombHold = null; // { source: 'key' | 'pointer', start, done } while X / BOMB is held
+    this.godModeUsed = false;
     this.highScore = loadHighScore();
     this.nextFire = 0;
     this.bank = { dir: 0, time: 0 };
@@ -38,10 +43,10 @@ export class GameScene extends Phaser.Scene {
 
     this.registry.set({
       score: 0, lives: this.lives, highScore: this.highScore, wave: 0,
-      weapon: 0, shield: false, bossHp: null, muted: sound.muted,
+      weapon: 0, shield: false, rapid: false, wingmen: false, bombs: this.bombs, godHold: 0, bossHp: null, muted: sound.muted,
     });
 
-    this.starfield = new Starfield(this);
+    this.starfield = new Starfield(this, { hazards: true });
     this.createPlayer();
     this.createPools();
     this.createInput();
@@ -50,7 +55,6 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.bullets, this.enemies, this.onBulletHitsEnemy, null, this);
     this.physics.add.overlap(this.player, this.enemies, this.onPlayerHitsEnemy, null, this);
     this.physics.add.overlap(this.player, this.enemyBullets, this.onPlayerShot, null, this);
-    this.physics.add.overlap(this.player, this.powerups, this.onCollect, null, this);
 
     this.director = new WaveDirector(this, waveScript);
 
@@ -58,6 +62,7 @@ export class GameScene extends Phaser.Scene {
     const onResume = () => {
       this.input.keyboard.resetKeys();
       this.endDrag();
+      this.cancelBombHold(); // a hold doesn't survive pause / the slot machine / the gallery
       sound.setPaused(false);
     };
     this.events.on('resume', onResume);
@@ -89,6 +94,13 @@ export class GameScene extends Phaser.Scene {
 
     this.shieldGfx = this.add.graphics().setDepth(11);
 
+    // Wingmen power-up: two half-size copies of the player ship (hidden until won).
+    this.wingmen = [-1, 1].map((side) => {
+      const w = this.add.sprite(0, 0, 'player-ship', 0).setScale(CONFIG.powerups.wingmen.scale).setDepth(10).setVisible(false);
+      w.side = side;
+      return w;
+    });
+
     // Death feedback: a red ring around whatever killed the player, with its name.
     this.killRing = this.add.graphics().setDepth(30).setVisible(false);
     this.killLabel = this.add.text(0, 0, '', { ...FONT, color: '#ff4d6d' })
@@ -103,7 +115,6 @@ export class GameScene extends Phaser.Scene {
     this.bullets = this.physics.add.group({ defaultKey: 'shot-bolt', maxSize: C.bolt.poolSize });
     this.enemies = this.physics.add.group({ classType: Enemy, maxSize: C.enemyPool });
     this.enemyBullets = this.physics.add.group({ defaultKey: 'boss-bolt', maxSize: C.enemyBullet.poolSize });
-    this.powerups = this.physics.add.group({ defaultKey: 'gems', maxSize: 12 });
     this.hits = this.add.group({ defaultKey: 'hit', maxSize: C.fx.hitPool });
     this.explosions = this.add.group({ defaultKey: 'enemy-explosion', maxSize: C.fx.explosionPool });
     this.bigBooms = this.add.group({ defaultKey: 'explosion-big', maxSize: 12 });
@@ -112,7 +123,7 @@ export class GameScene extends Phaser.Scene {
   createInput() {
     // Fire: Space, or Z / J - away from the arrow keys, for keyboards that can't register
     // Space together with two arrows at once (key ghosting).
-    this.keys = this.input.keyboard.addKeys('UP,DOWN,LEFT,RIGHT,W,A,S,D,SPACE,Z,J,P,ESC,G,I,M,B');
+    this.keys = this.input.keyboard.addKeys('UP,DOWN,LEFT,RIGHT,W,A,S,D,SPACE,Z,J,X,P,ESC,G,I,M,B');
     this.input.keyboard.addCapture('UP,DOWN,LEFT,RIGHT,SPACE');
 
     // Touch / mouse: drag anywhere moves the ship relative to the finger, holding fires.
@@ -177,7 +188,13 @@ export class GameScene extends Phaser.Scene {
     if (this.frozen) return; // death freeze-frame / hit-stop: nothing moves
 
     this.starfield.update(dt);
+    this.shootRocks(time);
     if (!this.over) this.director.update(delta);
+
+    // X: tap = bomb (on release), hold godHoldMs = god mode.
+    if (JD(K.X)) this.startBombHold('key');
+    if (this.bombHold && this.bombHold.source === 'key' && !K.X.isDown) this.endBombHold('key');
+    this.updateBombHold();
 
     if (this.alive) {
       this.resumeHeldPointer();
@@ -185,8 +202,10 @@ export class GameScene extends Phaser.Scene {
       const firing = K.SPACE.isDown || K.Z.isDown || K.J.isDown || this.drag !== null;
       if (firing && time >= this.nextFire) {
         this.fire();
-        this.nextFire = time + 1000 / CONFIG.weapons[this.weaponLevel].fireRate;
+        const rate = CONFIG.weapons[this.weaponLevel].fireRate * (this.rapid ? CONFIG.powerups.rapidFireMul : 1);
+        this.nextFire = time + 1000 / rate;
       }
+      this.checkRocks();
       if (this.boss && this.boss.beamHits(this.player.x, this.player.y, 5)) {
         this.hurtPlayer({
           target: { x: this.boss.mouthX, y: this.player.y - 6, active: false },
@@ -238,6 +257,16 @@ export class GameScene extends Phaser.Scene {
     p.setFrame(dir === 0 ? 0 : dir < 0 ? (full ? 2 : 1) : full ? 4 : 3);
 
     for (const t of this.thrusters) t.setPosition(Math.round(p.x + t.dx), Math.round(p.y + 20));
+    this.updateWingmen();
+  }
+
+  updateWingmen() {
+    const W = CONFIG.powerups.wingmen;
+    const p = this.player;
+    for (const w of this.wingmen) {
+      w.setVisible(this.wingmenOn && this.alive);
+      w.setPosition(Math.round(p.x + w.side * W.dx), Math.round(p.y + W.dy)).setAlpha(p.alpha);
+    }
   }
 
   drawShield(time) {
@@ -254,21 +283,126 @@ export class GameScene extends Phaser.Scene {
     const weapon = CONFIG.weapons[this.weaponLevel];
     const x0 = this.player.x;
     const y0 = this.player.y - 22; // just above the nose
-    for (const shot of weapon.shots) {
-      const x = x0 + shot.dx;
-      const b = this.bullets.get(x, y0);
-      if (!b) return;
-      const spr = SHOT_SPRITES[shot.sprite];
-      b.enableBody(true, x, y0, true, true);
-      b.setTexture(shot.sprite).setOrigin(spr.origin[0], spr.origin[1]).setAngle(spr.rotate + shot.angle).setDepth(8);
-      b.body.setSize(spr.body[0], spr.body[1], false).setOffset(spr.body[2], spr.body[3]);
-      b.body.reset(x, y0);
-      const rad = Phaser.Math.DegToRad(shot.angle);
-      b.setVelocity(Math.sin(rad) * CONFIG.bolt.speed, -Math.cos(rad) * CONFIG.bolt.speed);
-      b.damage = shot.damage;
-      b.play(spr.anim, true);
+    for (const shot of weapon.shots) this.spawnShot(x0 + shot.dx, y0, shot);
+    // Wingmen each add a plain bolt.
+    if (this.wingmenOn) {
+      const W = CONFIG.powerups.wingmen;
+      for (const side of [-1, 1]) this.spawnShot(x0 + side * W.dx, y0 + W.dy + 10, CONFIG.weapons[0].shots[0]);
     }
     sound.sfx('shoot', this.weaponLevel);
+  }
+
+  spawnShot(x, y0, shot) {
+    const b = this.bullets.get(x, y0);
+    if (!b) return;
+    const spr = SHOT_SPRITES[shot.sprite];
+    b.enableBody(true, x, y0, true, true);
+    b.setTexture(shot.sprite).setOrigin(spr.origin[0], spr.origin[1]).setAngle(spr.rotate + shot.angle).setDepth(8);
+    b.setScale(CONFIG.bolt.scale);
+    b.body.setSize(spr.body[0], spr.body[1], false).setOffset(spr.body[2], spr.body[3]);
+    b.body.reset(x, y0);
+    const rad = Phaser.Math.DegToRad(shot.angle);
+    b.setVelocity(Math.sin(rad) * CONFIG.bolt.speed, -Math.cos(rad) * CONFIG.bolt.speed);
+    b.damage = shot.damage;
+    b.play(spr.anim, true);
+  }
+
+  // Bomb: clears every enemy bullet and damages every enemy, rock and the boss on screen.
+  useBomb() {
+    const P = CONFIG.powerups;
+    if (!this.alive || this.bombs <= 0 || this.over || this.won) return;
+    this.bombs -= 1;
+    this.registry.set('bombs', this.bombs);
+    const now = this.time.now;
+    sound.sfx('bigExplode');
+    this.cameras.main.flash(200, 255, 209, 102);
+    this.cameras.main.shake(300, 0.012);
+    const ring = this.add.circle(this.player.x, this.player.y, 12).setStrokeStyle(3, 0xffd166).setDepth(30);
+    this.tweens.add({ targets: ring, scale: 40, alpha: 0, duration: 500, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
+
+    this.enemyBullets.getMatching('active', true).forEach((b) => b.disableBody(true, true));
+    this.enemies.getMatching('active', true).forEach((e) => {
+      if (e.y < -10) return; // not on screen yet
+      if (e.hit(now, P.bombDamage, true)) { // bombs pierce the Red Koala's shield
+        this.destroyEnemy(e);
+        this.addScore(e.def.points);
+      }
+    });
+    for (const rock of this.starfield.rocks) {
+      if (rock.y < -rock.hitR || rock.y > CONFIG.height + rock.hitR) continue;
+      rock.hp -= P.bombDamage;
+      if (rock.hp <= 0) {
+        this.addScore(CONFIG.props.near.points);
+        this.shatterRock(rock);
+      }
+    }
+    const boss = this.boss;
+    if (boss && boss.active && boss.vulnerable && boss.hp > 0) {
+      boss.damage(P.bombBossDamage, now);
+      this.registry.set('bossHp', Math.max(0, boss.hp) / boss.maxHp);
+    }
+  }
+
+  // ---------- bomb button / X: tap for a bomb, hold for god mode ----------
+
+  startBombHold(source) {
+    if (this.bombHold || this.over || this.won) return;
+    this.bombHold = { source, start: this.time.now, done: false };
+  }
+
+  // Released: a short press fires a bomb; a hold that already triggered god mode does nothing more.
+  endBombHold(source) {
+    const h = this.bombHold;
+    if (!h || h.source !== source) return;
+    this.cancelBombHold();
+    if (!h.done) this.useBomb();
+  }
+
+  // Let go without a bomb (finger slid off the button, game paused).
+  cancelBombHold() {
+    this.bombHold = null;
+    if (this.registry.get('godHold')) this.registry.set('godHold', 0);
+  }
+
+  updateBombHold() {
+    const h = this.bombHold;
+    if (!h || h.done || this.godModeUsed) return;
+    const held = this.time.now - h.start;
+    const holdMs = CONFIG.powerups.godHoldMs;
+    // HUD countdown after the first second, so a normal tap never shows it.
+    const left = held > 1000 ? Math.ceil((holdMs - held) / 1000) : 0;
+    if (this.registry.get('godHold') !== left) this.registry.set('godHold', left);
+    if (held >= holdMs) {
+      h.done = true;
+      this.registry.set('godHold', 0);
+      this.activateGodMode();
+    }
+  }
+
+  // Secret: all 6 power-ups at once, once per game.
+  activateGodMode() {
+    if (this.godModeUsed || this.over || this.won) return;
+    this.godModeUsed = true;
+    sound.sfx('jackpot');
+    this.cameras.main.flash(300, 255, 143, 216);
+    this.events.emit('god-mode');
+    Object.keys(CONFIG.powerups.kinds).forEach((kind, i) => {
+      this.time.delayedCall(200 + i * 220, () => {
+        if (!this.over) this.grantPowerup(kind);
+      });
+    });
+  }
+
+  // Rapid fire and wingmen are won for one wave: they switch off at the next bonus spin.
+  setRapid(on) {
+    this.rapid = on;
+    this.registry.set('rapid', on);
+  }
+
+  setWingmen(on) {
+    this.wingmenOn = on;
+    this.registry.set('wingmen', on);
+    this.updateWingmen();
   }
 
   // Called by the WaveDirector.
@@ -286,7 +420,10 @@ export class GameScene extends Phaser.Scene {
     b.enableBody(true, x, y, true, true);
     b.shooter = shooterType;
     b.setDepth(7);
+    const EB = CONFIG.enemyBullet;
+    b.setScale(shooterType === 'boss' ? EB.bossScale : shooterType === 'gunship' ? EB.gunshipScale : EB.scale);
     b.body.setCircle(3, 1, 1);
+    b.body.reset(x, y);
     b.play('enemy-bolt', true);
     const a = angle ?? (this.alive ? Phaser.Math.Angle.Between(x, y, this.player.x, this.player.y) : Math.PI / 2);
     const speed = CONFIG.enemyBullet.speed * speedMul;
@@ -306,19 +443,18 @@ export class GameScene extends Phaser.Scene {
   // ---------- collisions ----------
 
   onBulletHitsEnemy(bullet, enemy) {
-    if (!bullet.active || !enemy.active) return;
+    if (!bullet.active || !enemy.active || enemy.cloaked) return; // shots pass through a cloaked Blue Koala
     bullet.disableBody(true, true);
     this.playFx(this.hits, bullet.x, bullet.y, 'hit', 12);
     sound.sfx('hit');
     if (enemy.hit(this.time.now, bullet.damage || 1)) {
       this.destroyEnemy(enemy);
       this.addScore(enemy.def.points);
-      this.maybeDropPowerup(enemy);
     }
   }
 
   onPlayerHitsEnemy(player, enemy) {
-    if (!enemy.active) return;
+    if (!enemy.active || enemy.cloaked) return;
     this.hurtPlayer({ target: enemy, kind: 'enemy', label: 'CRASHED INTO ' + enemy.def.name });
   }
 
@@ -376,11 +512,6 @@ export class GameScene extends Phaser.Scene {
 
   // ---------- power-ups ----------
 
-  maybeDropPowerup(enemy) {
-    const chance = CONFIG.powerups.dropChance[enemy.type] || 0;
-    if (Math.random() < chance) this.spawnPowerup(enemy.x, enemy.y);
-  }
-
   // A random power-up kind, using the weights in CONFIG.powerups.kinds.
   randomPowerupKind() {
     const kinds = CONFIG.powerups.kinds;
@@ -389,26 +520,8 @@ export class GameScene extends Phaser.Scene {
     return Object.keys(kinds).find((k) => (r -= kinds[k].weight) < 0) || 'weapon';
   }
 
-  spawnPowerup(x, y, kind) {
-    const kinds = CONFIG.powerups.kinds;
-    kind = kind || this.randomPowerupKind();
-    const p = this.powerups.get(x, y);
-    if (!p) return;
-    p.enableBody(true, x, y, true, true);
-    p.kind = kind;
-    p.setDepth(8).play('gem-' + kinds[kind].gem, true);
-    p.body.setSize(16, 16, false).setOffset(0, 0);
-    p.setVelocity(0, CONFIG.powerups.fallSpeed);
-  }
-
-  onCollect(player, p) {
-    if (!p.active || !this.alive) return;
-    p.disableBody(true, true);
-    this.grantPowerup(p.kind, false, p.x, p.y - 10);
-  }
-
-  // Applies a power-up (from a gem pickup, or the wave-clear slot machine) and floats its name.
-  grantPowerup(kind, fromSlot, x = this.player.x, y = this.player.y - 30) {
+  // Applies a power-up won on the wave-clear slot machine and floats its name.
+  grantPowerup(kind) {
     const P = CONFIG.powerups;
     let text = P.kinds[kind].label;
     let maxed = false;
@@ -431,17 +544,28 @@ export class GameScene extends Phaser.Scene {
         this.registry.set('lives', this.lives);
         sound.sfx('oneUp');
       } else maxed = true;
+    } else if (kind === 'rapid') {
+      this.setRapid(true);
+      sound.sfx('powerup');
+    } else if (kind === 'wingmen') {
+      this.setWingmen(true);
+      sound.sfx('powerup');
+    } else if (kind === 'bomb') {
+      if (this.bombs < P.maxBombs) {
+        this.bombs += 1;
+        this.registry.set('bombs', this.bombs);
+        text = `BOMB x${this.bombs}  (X)`;
+        sound.sfx('powerup');
+      } else maxed = true;
     }
     if (maxed) {
       this.addScore(P.maxedBonus);
       text = '+' + P.maxedBonus;
       sound.sfx('powerup');
     }
-    // While the ship is exploding/respawning, show the text mid-screen instead of on the empty spot.
-    if (fromSlot && !this.alive) {
-      x = CONFIG.width / 2;
-      y = CONFIG.player.startY - 30;
-    }
+    // Float the text above the ship; while it is exploding/respawning, above its start spot instead.
+    const x = this.alive ? this.player.x : CONFIG.width / 2;
+    const y = (this.alive ? this.player.y : CONFIG.player.startY) - 30;
     this.floatText(x, y, text, '#ffd166');
   }
 
@@ -464,6 +588,9 @@ export class GameScene extends Phaser.Scene {
   openSlot(number) {
     if (this.over || this.lives <= 0 || !this.scene.isActive()) return;
     this.endDrag();
+    // One-wave power-ups end here; the spin may hand out a new one.
+    this.setRapid(false);
+    this.setWingmen(false);
     this.scene.pause();
     this.scene.launch('Slot', { wave: number, kind: this.randomPowerupKind() });
   }
@@ -477,6 +604,61 @@ export class GameScene extends Phaser.Scene {
   // ---------- getting hit ----------
 
   // cause = { target: what hit (enemy, bullet, or a point for the boss/beam), kind, label }
+  // Asteroids drifting past are hazards: a circle around each rock against the ship's small hitbox
+  // (positions, not physics bodies — the rocks are plain images from the Starfield).
+  checkRocks() {
+    if (this.invulnerable || this.won) return;
+    const px = this.player.x;
+    const py = this.player.y + 5; // centre of the ship's hitbox
+    for (const rock of this.starfield.rocks) {
+      if (!rock.visible) continue;
+      const r = rock.hitR + 5;
+      const dx = rock.x - px;
+      const dy = rock.y - py;
+      if (dx * dx + dy * dy < r * r) {
+        this.hurtPlayer({ target: rock, kind: 'rock', label: 'CRASHED INTO A ROCK' });
+        return;
+      }
+    }
+  }
+
+  // Player shots against the rocks, by position: a shot stops on a rock, and enough hits break it.
+  shootRocks(time) {
+    const shots = this.bullets.getMatching('active', true);
+    for (const rock of this.starfield.rocks) {
+      if (rock.flashUntil && time >= rock.flashUntil) {
+        rock.clearTint();
+        rock.flashUntil = 0;
+      }
+      if (!shots.length || rock.y < -rock.hitR) continue; // nothing to test, or not on screen yet
+      const r = rock.hitR + 3;
+      for (const b of shots) {
+        if (!b.active) continue;
+        const dx = b.x - rock.x;
+        const dy = b.y - rock.y;
+        if (dx * dx + dy * dy >= r * r) continue;
+        b.disableBody(true, true);
+        this.playFx(this.hits, b.x, b.y, 'hit', 12);
+        sound.sfx('hit');
+        rock.hp -= b.damage || 1;
+        if (rock.hp <= 0) {
+          this.addScore(CONFIG.props.near.points);
+          this.shatterRock(rock);
+          break;
+        }
+        rock.setTintFill(0xffffff);
+        rock.flashUntil = time + CONFIG.fx.flashMs;
+      }
+    }
+  }
+
+  // A rock that is shot to pieces or hits the ship breaks apart, and a new one drifts in later.
+  shatterRock(rock) {
+    this.playFx(this.explosions, rock.x, rock.y, 'enemy-explosion', 14);
+    sound.sfx('explode');
+    this.starfield.resetProp(rock, 'near', false);
+  }
+
   hurtPlayer(cause) {
     if (!this.alive || this.invulnerable || this.won) return;
     if (this.shield) this.breakShield(cause);
@@ -489,6 +671,7 @@ export class GameScene extends Phaser.Scene {
     sound.sfx('shieldBreak');
     if (cause.kind === 'bullet' && cause.target.active) cause.target.disableBody(true, true);
     if (cause.kind === 'enemy' && cause.target.active) this.destroyEnemy(cause.target);
+    if (cause.kind === 'rock') this.shatterRock(cause.target);
     this.playFx(this.hits, this.player.x, this.player.y, 'hit', 12);
     const ring = this.add.circle(this.player.x, this.player.y + 4, 19).setStrokeStyle(2, 0x5fd3ff).setDepth(11);
     this.tweens.add({ targets: ring, scale: 2.2, alpha: 0, duration: 350, onComplete: () => ring.destroy() });
@@ -523,6 +706,7 @@ export class GameScene extends Phaser.Scene {
       if (cause.target.active) {
         if (cause.kind === 'enemy') this.destroyEnemy(cause.target);
         else if (cause.kind === 'bullet') cause.target.disableBody(true, true);
+        else if (cause.kind === 'rock') this.shatterRock(cause.target);
       }
 
       p.clearTint();
@@ -530,6 +714,7 @@ export class GameScene extends Phaser.Scene {
       sound.sfx('bigExplode');
       p.disableBody(true, true);
       this.thrusters.forEach((t) => t.setVisible(false));
+      this.updateWingmen(); // they hide while the ship is gone and come back with it
       this.cameras.main.shake(250, 0.012);
 
       if (this.lives > 0) this.time.delayedCall(CONFIG.respawnDelay, () => this.respawn());
@@ -539,7 +724,7 @@ export class GameScene extends Phaser.Scene {
 
   showKiller({ target, kind, label }) {
     const { width } = CONFIG;
-    const r = kind === 'enemy' ? 22 : kind === 'boss' ? 16 : 8;
+    const r = kind === 'rock' ? Math.round(target.hitR) + 6 : kind === 'enemy' ? 22 : kind === 'boss' ? 16 : 8;
     this.killRing.clear().lineStyle(2, 0xff4d6d, 1).strokeCircle(target.x, target.y, r).setVisible(true).setAlpha(1);
     // Label above the ring, or below it when the killer is near the top edge.
     const above = target.y - r - 30 > 0;
@@ -600,7 +785,7 @@ export class GameScene extends Phaser.Scene {
   bossTaunt() {
     if (this.over || this.boss) return;
     const taunt = Phaser.Utils.Array.GetRandom(CONFIG.boss.taunts);
-    this.bossMods = { speedMul: taunt.speedMul || 1, hpMul: taunt.hpMul || 1 };
+    this.bossMods = { speedMul: taunt.speedMul || 1, hpMul: taunt.hpMul || 1, summon: taunt.summon || null };
     this.lastTaunt = taunt;
     this.events.emit('boss-taunt', taunt);
     sound.sfx('taunt');
@@ -616,6 +801,18 @@ export class GameScene extends Phaser.Scene {
     this.registry.set('bossHp', 1);
     this.events.emit('boss-start');
     sound.playMusic('boss');
+  }
+
+  // Called by the boss once it has flown in: launches its escort (e.g. diving Green Koalas) one by one
+  // from under its hull. They then behave as normal Koalas.
+  bossSummon(boss, { type, offsets, gap, overrides = {} }) {
+    offsets.forEach((dx, i) => {
+      this.time.delayedCall(i * gap, () => {
+        if (this.over || this.won || !boss.active) return;
+        const x = Phaser.Math.Clamp(boss.x + dx, 16, CONFIG.width - 16);
+        this.spawnEnemy(type, x, boss.y + 30, overrides, 1);
+      });
+    });
   }
 
   skipToBoss() {
@@ -668,6 +865,7 @@ export class GameScene extends Phaser.Scene {
       score: this.score,
       highScore: Math.max(this.score, this.highScore),
       isNewBest,
+      rank: leaderboardRank(this.score),
       wave: this.director.number,
       killedBy: this.lastDeath,
     });
@@ -689,6 +887,7 @@ export class GameScene extends Phaser.Scene {
       bonus,
       highScore: Math.max(this.score, this.highScore),
       isNewBest,
+      rank: leaderboardRank(this.score),
       timeMs: this.time.now - this.startTime,
     });
   }
@@ -715,9 +914,6 @@ export class GameScene extends Phaser.Scene {
     this.enemyBullets.getMatching('active', true).forEach((b) => {
       if (b.y > height + 10 || b.y < -10 || b.x < -10 || b.x > width + 10) b.disableBody(true, true);
     });
-    this.powerups.getMatching('active', true).forEach((p) => {
-      if (p.y > height + 16) p.disableBody(true, true);
-    });
   }
 
   updateDebug() {
@@ -730,7 +926,6 @@ export class GameScene extends Phaser.Scene {
       `BOLTS ${pool(this.bullets)}`,
       `ENEMIES ${pool(this.enemies)}`,
       `E-SHOTS ${pool(this.enemyBullets)}`,
-      `PICKUPS ${pool(this.powerups)}`,
     ]);
   }
 
